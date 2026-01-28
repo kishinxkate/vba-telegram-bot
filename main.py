@@ -87,3 +87,4 @@ app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, reply))
 
 print("🤖 VBA GPT Bot running...")
 app.run_polling()
+
