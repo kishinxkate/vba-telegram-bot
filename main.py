@@ -15,7 +15,13 @@ TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
 # ===== Gemini Setup =====
-genai.configure(api_key=GEMINI_API_KEY)
+import os
+import google.generativeai as genai
+
+genai.configure(
+    api_key=os.getenv("GOOGLE_API_KEY")
+)
+
 
 model = genai.GenerativeModel(
     model_name="gemini-1.5-flash",
@@ -80,3 +86,4 @@ app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, reply))
 
 print("🤖 Gemini VBA Bot running...")
 app.run_polling()
+
