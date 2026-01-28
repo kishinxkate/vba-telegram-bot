@@ -1,6 +1,6 @@
 import os
 import time
-from openai import OpenAI
+import google.generativeai as genai
 from telegram import Update
 from telegram.ext import (
     ApplicationBuilder,
@@ -10,81 +10,73 @@ from telegram.ext import (
     filters,
 )
 
-# ===== Environment Variables =====
+# ===== ENV =====
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
 
-# ===== OpenAI Client =====
-client = OpenAI(api_key=OPENAI_API_KEY)
+# ===== Gemini Setup =====
+genai.configure(api_key=GEMINI_API_KEY)
 
-# ===== Prompt =====
-SYSTEM_PROMPT = (
-    "You are an expert Excel VBA developer. "
-    "Return ONLY clean, ready-to-run VBA macro code. "
-    "No explanation. No markdown."
+model = genai.GenerativeModel(
+    model_name="gemini-1.5-flash",
+    system_instruction=(
+        "You are an expert Excel VBA developer. "
+        "Return ONLY clean, ready-to-run VBA macro code. "
+        "No explanation. No markdown."
+    ),
 )
 
-# ===== Simple Rate Limit (Cost Protection) =====
-USER_LAST_CALL = {}
-COOLDOWN_SECONDS = 10   # user တစ်ယောက် 10 sec တစ်ခါပဲ
+# ===== 🔐 ALLOWED USERS =====
+ALLOWED_USERS = {
+    8263890862,   # 👈 ကိုယ့် Telegram user_id
+}
 
-def can_use(user_id: int) -> bool:
+# ===== RATE LIMIT =====
+USER_LAST = {}
+COOLDOWN = 10
+
+def can_use(uid):
     now = time.time()
-    last = USER_LAST_CALL.get(user_id, 0)
-    if now - last < COOLDOWN_SECONDS:
+    if now - USER_LAST.get(uid, 0) < COOLDOWN:
         return False
-    USER_LAST_CALL[user_id] = now
+    USER_LAST[uid] = now
     return True
 
-# ===== OpenAI VBA Generator =====
-async def generate_vba(prompt: str) -> str:
-    response = client.responses.create(
-        model="gpt-4.1-mini",
-        input=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": prompt},
-        ],
-        temperature=0.2,
-        max_output_tokens=400,
-    )
-    return response.output_text.strip()
-
-# ===== /start Command =====
+# ===== /start =====
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id not in ALLOWED_USERS:
+        await update.message.reply_text("🚫 သုံးခွင့်မရှိပါ")
+        return
+
     await update.message.reply_text(
-        "👋 VBA Bot မှ ကြိုဆိုပါတယ်\n\n"
-        "Excel VBA ကို စာနဲ့ပို့လိုက်ရုံနဲ့\n"
-        "Macro code ပြန်ရေးပေးပါတယ် 💻\n\n"
-        "ဥပမာ:\n"
-        "Sheet1 က data ကို Sheet2 ထဲ copy လုပ်ချင်တယ်"
+        "👋 Gemini VBA Bot မှ ကြိုဆိုပါတယ်\n"
+        "Excel VBA ကို စာနဲ့ပို့လိုက်ရုံနဲ့ Macro ပြန်ရေးပေးပါတယ်"
     )
 
-# ===== Message Handler =====
+# ===== MESSAGE HANDLER =====
 async def reply(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    text = update.message.text
+
+    if user.id not in ALLOWED_USERS:
+        await update.message.reply_text("🚫 သုံးခွင့်မရှိပါ")
+        return
 
     if not can_use(user.id):
-        await update.message.reply_text(
-            "⏳ ခဏစောင့်ပြီး ပြန်ကြိုးစားပါ (10 sec)"
-        )
+        await update.message.reply_text("⏳ ခဏစောင့်ပြီး ပြန်ကြိုးစားပါ")
         return
 
     try:
-        vba_code = await generate_vba(text)
-        await update.message.reply_text("🧾 VBA Code:\n\n" + vba_code)
+        response = model.generate_content(update.message.text)
+        await update.message.reply_text("🧾 VBA Code:\n\n" + response.text.strip())
+
     except Exception as e:
-        await update.message.reply_text(
-            "❌ Error ဖြစ်နေပါတယ်\nခဏနောက်မှ ပြန်ကြိုးစားပါ"
-        )
-        print("ERROR:", e)
+        await update.message.reply_text("❌ Gemini Error:\n" + str(e))
+        print("GEMINI ERROR:", e)
 
-# ===== Telegram App =====
+# ===== APP =====
 app = ApplicationBuilder().token(TELEGRAM_TOKEN).build()
-
 app.add_handler(CommandHandler("start", start))
 app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, reply))
 
-print("🤖 VBA GPT Bot running...")
+print("🤖 Gemini VBA Bot running...")
 app.run_polling()
-
